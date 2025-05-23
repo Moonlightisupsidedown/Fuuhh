@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mini Instagram with Firebase Modular SDK</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; }
+    #login, #signup, #app, #profile { margin: 20px 0; }
+    img, video { max-width: 100%; height: auto; }
+    .post { border: 1px solid #ddd; padding: 10px; margin: 10px 0; }
+    input, button { padding: 8px; margin: 5px 0; width: 100%; }
+  </style>
+</head>
+<body>
+
+<h1>Mini Instagram</h1>
+
+<div id="auth-section">
+  <div id="signup">
+    <h3>Sign Up</h3>
+    <input id="signup-email" type="email" placeholder="Email" />
+    <input id="signup-password" type="password" placeholder="Password" />
+    <input id="signup-username" placeholder="Username" />
+    <button id="signup-btn">Sign Up</button>
+  </div>
+
+  <div id="login">
+    <h3>Login</h3>
+    <input id="login-email" type="email" placeholder="Email" />
+    <input id="login-password" type="password" placeholder="Password" />
+    <button id="login-btn">Login</button>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
+  <button id="logout-btn">Logout</button>
+  <h2>Welcome <span id="display-username"></span></h2>
+
+  <div id="post-form">
+    <h3>Create Post (Image or Video URL)</h3>
+    <input id="post-url" placeholder="https://example.com/image.jpg or video.mp4" />
+    <button id="post-btn">Post</button>
+  </div>
+
+  <h3>Feed</h3>
+  <div id="feed"></div>
+</div>
+
+<div id="profile" style="display:none;">
+  <h2>User Profile</h2>
+  <div id="profile-info"></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+  import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCLc1-4omaM4EfL6xCrcPK4O8UfSw1QSoQ",
+    authDomain: "fuuhh-app.firebaseapp.com",
+    projectId: "fuuhh-app",
+    storageBucket: "fuuhh-app.firebasestorage.app",
+    messagingSenderId: "694266475523",
+    appId: "1:694266475523:web:f44f42196285c9e9534a36",
+    measurementId: "G-ML3GMEKSJ3"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Elements
+  const signupEmail = document.getElementById('signup-email');
+  const signupPassword = document.getElementById('signup-password');
+  const signupUsername = document.getElementById('signup-username');
+  const signupBtn = document.getElementById('signup-btn');
+
+  const loginEmail = document.getElementById('login-email');
+  const loginPassword = document.getElementById('login-password');
+  const loginBtn = document.getElementById('login-btn');
+
+  const logoutBtn = document.getElementById('logout-btn');
+  const displayUsername = document.getElementById('display-username');
+
+  const authSection = document.getElementById('auth-section');
+  const appSection = document.getElementById('app');
+
+  const postUrlInput = document.getElementById('post-url');
+  const postBtn = document.getElementById('post-btn');
+  const feedDiv = document.getElementById('feed');
+
+  // Signup
+  signupBtn.addEventListener('click', async () => {
+    const email = signupEmail.value.trim();
+    const password = signupPassword.value.trim();
+    const username = signupUsername.value.trim();
+
+    if(!email || !password || !username){
+      alert('Please fill all signup fields');
+      return;
+    }
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Create user profile document
+      await setDoc(doc(db, "users", user.uid), {
+        username,
+        email,
+        createdAt: serverTimestamp()
+      });
+
+      signupEmail.value = '';
+      signupPassword.value = '';
+      signupUsername.value = '';
+
+    } catch(e) {
+      alert('Signup error: ' + e.message);
+    }
+  });
+
+  // Login
+  loginBtn.addEventListener('click', async () => {
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value.trim();
+    if(!email || !password){
+      alert('Please fill all login fields');
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      loginEmail.value = '';
+      loginPassword.value = '';
+    } catch(e) {
+      alert('Login error: ' + e.message);
+    }
+  });
+
+  // Logout
+  logoutBtn.addEventListener('click', () => {
+    signOut(auth);
+  });
+
+  // Auth State change listener
+  onAuthStateChanged(auth, async user => {
+    if(user){
+      authSection.style.display = 'none';
+      appSection.style.display = 'block';
+
+      // Load user profile data
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const userData = userDoc.data();
+      displayUsername.textContent = userData?.username || "No Username";
+
+      loadFeed();
+
+    } else {
+      authSection.style.display = 'block';
+      appSection.style.display = 'none';
+      feedDiv.innerHTML = '';
+      displayUsername.textContent = '';
+    }
+  });
+
+  // Create a post
+  postBtn.addEventListener('click', async () => {
+    const url = postUrlInput.value.trim();
+    const user = auth.currentUser;
+    if(!user){
+      alert('Not logged in');
+      return;
+    }
+    if(!url){
+      alert('Enter an image or video URL');
+      return;
+    }
+
+    // Simple URL validation (basic)
+    if(!url.startsWith('http')){
+      alert('Enter a valid URL');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "posts"), {
+        userId: user.uid,
+        url,
+        createdAt: serverTimestamp()
+      });
+      postUrlInput.value = '';
+    } catch(e){
+      alert('Error posting: ' + e.message);
+    }
+  });
+
+  // Load and show feed posts live
+  function loadFeed(){
+    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    onSnapshot(postsQuery, (snapshot) => {
+      feedDiv.innerHTML = '';
+      snapshot.forEach(docSnap => {
+        const post = docSnap.data();
+        const postDiv = document.createElement('div');
+        postDiv.className = 'post';
+
+        // Show username for each post
+        getDoc(doc(db, "users", post.userId)).then(userDoc => {
+          const userData = userDoc.data();
+          const userName = userData?.username || "Unknown";
+          const userEl = document.createElement('strong');
+          userEl.textContent = userName;
+          postDiv.appendChild(userEl);
+        });
+
+        // Check if URL is video or image by extension
+        if(post.url.match(/\.(mp4|webm|ogg)$/i)){
+          const video = document.createElement('video');
+          video.src = post.url;
+          video.controls = true;
+          postDiv.appendChild(video);
+        } else {
+          const img = document.createElement('img');
+          img.src = post.url;
+          postDiv.appendChild(img);
+        }
+        feedDiv.appendChild(postDiv);
+      });
+    });
+  }
+
+</script>
+
+</body>
+</html>
