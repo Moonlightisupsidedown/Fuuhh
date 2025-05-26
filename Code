@@ -1,236 +1,362 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Sillysoftr</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; }
-    #login, #signup, #app, #profile { margin: 20px 0; }
-    img, video { max-width: 100%; height: auto; }
-    .post { border: 1px solid #ddd; padding: 10px; margin: 10px 0; }
-    input, button { padding: 8px; margin: 5px 0; width: 100%; }
-  </style>
-</head>
-<body>
-
-<h1>Sillysoftr</h1>
-
-<div id="auth-section">
-  <div id="signup">
-    <h3>Sign Up</h3>
-    <input id="signup-email" type="email" placeholder="Email" />
-    <input id="signup-password" type="password" placeholder="Password" />
-    <input id="signup-username" placeholder="Username" />
-    <button id="signup-btn">Sign Up</button>
-  </div>
-
-  <div id="login">
-    <h3>Login</h3>
-    <input id="login-email" type="email" placeholder="Email" />
-    <input id="login-password" type="password" placeholder="Password" />
-    <button id="login-btn">Login</button>
-  </div>
-</div>
-
-<div id="app" style="display:none;">
-  <button id="logout-btn">Logout</button>
-  <h2>Welcome <span id="display-username"></span></h2>
-
-  <div id="post-form">
-    <h3>Create Post (Image or Video URL)</h3>
-    <input id="post-url" placeholder="https://example.com/image.jpg or video.mp4" />
-    <button id="post-btn">Post</button>
-  </div>
-
-  <h3>Feed</h3>
-  <div id="feed"></div>
-</div>
-
-<div id="profile" style="display:none;">
-  <h2>User Profile</h2>
-  <div id="profile-info"></div>
-</div>
-
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
-  import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyCLc1-4omaM4EfL6xCrcPK4O8UfSw1QSoQ",
-    authDomain: "fuuhh-app.firebaseapp.com",
-    projectId: "fuuhh-app",
-    storageBucket: "fuuhh-app.firebasestorage.app",
-    messagingSenderId: "694266475523",
-    appId: "1:694266475523:web:f44f42196285c9e9534a36",
-    measurementId: "G-ML3GMEKSJ3"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
-  // Elements
-  const signupEmail = document.getElementById('signup-email');
-  const signupPassword = document.getElementById('signup-password');
-  const signupUsername = document.getElementById('signup-username');
-  const signupBtn = document.getElementById('signup-btn');
-
-  const loginEmail = document.getElementById('login-email');
-  const loginPassword = document.getElementById('login-password');
-  const loginBtn = document.getElementById('login-btn');
-
-  const logoutBtn = document.getElementById('logout-btn');
-  const displayUsername = document.getElementById('display-username');
-
-  const authSection = document.getElementById('auth-section');
-  const appSection = document.getElementById('app');
-
-  const postUrlInput = document.getElementById('post-url');
-  const postBtn = document.getElementById('post-btn');
-  const feedDiv = document.getElementById('feed');
-
-  // Signup
-  signupBtn.addEventListener('click', async () => {
-    const email = signupEmail.value.trim();
-    const password = signupPassword.value.trim();
-    const username = signupUsername.value.trim();
-
-    if(!email || !password || !username){
-      alert('Please fill all signup fields');
-      return;
-    }
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      // Create user profile document
-      await setDoc(doc(db, "users", user.uid), {
-        username,
-        email,
-        createdAt: serverTimestamp()
-      });
-
-      signupEmail.value = '';
-      signupPassword.value = '';
-      signupUsername.value = '';
-
-    } catch(e) {
-      alert('Signup error: ' + e.message);
-    }
-  });
-
-  // Login
-  loginBtn.addEventListener('click', async () => {
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value.trim();
-    if(!email || !password){
-      alert('Please fill all login fields');
-      return;
-    }
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      loginEmail.value = '';
-      loginPassword.value = '';
-    } catch(e) {
-      alert('Login error: ' + e.message);
-    }
-  });
-
-  // Logout
-  logoutBtn.addEventListener('click', () => {
-    signOut(auth);
-  });
-
-  // Auth State change listener
-  onAuthStateChanged(auth, async user => {
-    if(user){
-      authSection.style.display = 'none';
-      appSection.style.display = 'block';
-
-      // Load user profile data
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data();
-      displayUsername.textContent = userData?.username || "No Username";
-
-      loadFeed();
-
-    } else {
-      authSection.style.display = 'block';
-      appSection.style.display = 'none';
-      feedDiv.innerHTML = '';
-      displayUsername.textContent = '';
-    }
-  });
-
-  // Create a post
-  postBtn.addEventListener('click', async () => {
-    const url = postUrlInput.value.trim();
-    const user = auth.currentUser;
-    if(!user){
-      alert('Not logged in');
-      return;
-    }
-    if(!url){
-      alert('Enter an image or video URL');
-      return;
-    }
-
-    // Simple URL validation (basic)
-    if(!url.startsWith('http')){
-      alert('Enter a valid URL');
-      return;
-    }
-
-    try {
-      await addDoc(collection(db, "posts"), {
-        userId: user.uid,
-        url,
-        createdAt: serverTimestamp()
-      });
-      postUrlInput.value = '';
-    } catch(e){
-      alert('Error posting: ' + e.message);
-    }
-  });
-
-  // Load and show feed posts live
-  function loadFeed(){
-    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-    onSnapshot(postsQuery, (snapshot) => {
-      feedDiv.innerHTML = '';
-      snapshot.forEach(docSnap => {
-        const post = docSnap.data();
-        const postDiv = document.createElement('div');
-        postDiv.className = 'post';
-
-        // Show username for each post
-        getDoc(doc(db, "users", post.userId)).then(userDoc => {
-          const userData = userDoc.data();
-          const userName = userData?.username || "Unknown";
-          const userEl = document.createElement('strong');
-          userEl.textContent = userName;
-          postDiv.appendChild(userEl);
-        });
-
-        // Check if URL is video or image by extension
-        if(post.url.match(/\.(mp4|webm|ogg)$/i)){
-          const video = document.createElement('video');
-          video.src = post.url;
-          video.controls = true;
-          postDiv.appendChild(video);
-        } else {
-          const img = document.createElement('img');
-          img.src = post.url;
-          postDiv.appendChild(img);
-        }
-        feedDiv.appendChild(postDiv);
-      });
-    });
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fuuhh - Instagram-Like Photo & Video Sharing</title>
+<style>
+  /* Reset and base styles */
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0; padding: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #fafafa;
+    max-width: 900px;
+    margin-left: auto; margin-right: auto;
+    color: #222;
+    line-height: 1.4;
   }
 
-</script>
+  header {
+    background-color: #e1306c;
+    padding: 1.5rem 2rem;
+    text-align: center;
+    color: white;
+    user-select: none;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 3rem;
+    letter-spacing: 0.15em;
+    font-weight: 900;
+  }
+  header p {
+    margin: 0.25rem 0 0 0;
+    font-weight: 600;
+    font-size: 1.2rem;
+    font-style: italic;
+  }
 
-</body>
-</html>
+  main {
+    padding: 1rem 2rem 3rem 2rem;
+  }
+
+  section {
+    background: white;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  }
+
+  h2 {
+    font-weight: 700;
+    font-size: 1.8rem;
+    margin-top: 0;
+  }
+
+  /* Form Elements */
+  label {
+    font-weight: 600;
+    display: block;
+    margin-top: 1rem;
+  }
+  input[type="email"],
+  input[type="password"],
+  input[type="url"],
+  textarea {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    font-size: 1rem;
+    margin-top: 0.3rem;
+    border-radius: 8px;
+    border: 1.5px solid #ccc;
+    transition: border-color 0.3s ease;
+    font-family: inherit;
+    resize: vertical;
+  }
+  input[type="email"]:focus,
+  input[type="password"]:focus,
+  input[type="url"]:focus,
+  textarea:focus {
+    border-color: #e1306c;
+    outline: none;
+  }
+
+  button {
+    margin-top: 1.2rem;
+    padding: 0.8rem 1.5rem;
+    background-color: #e1306c;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    user-select: none;
+  }
+  button:hover,
+  button:focus {
+    background-color: #c11a5b;
+    outline: none;
+  }
+  button:disabled {
+    background-color: #a8839e;
+    cursor: default;
+  }
+
+  /* Link-like buttons */
+  .link-button {
+    background: none;
+    border: none;
+    color: #e1306c;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: underline;
+    margin-top: 1rem;
+    font-size: 1rem;
+    user-select: none;
+  }
+  .link-button:hover,
+  .link-button:focus {
+    color: #c11a5b;
+    outline: none;
+  }
+
+  /* Error and Success messages */
+  .error {
+    color: #cc0000;
+    font-weight: 700;
+    margin-top: 1rem;
+  }
+  .success {
+    color: green;
+    font-weight: 700;
+    margin-top: 1rem;
+  }
+
+  /* Profile section */
+  .profile-info p {
+    margin: 0.3rem 0;
+    font-size: 1.1rem;
+  }
+
+  /* Post Upload Section */
+  #upload-post-section label {
+    margin-top: 0.6rem;
+  }
+
+  /* Posts */
+  #posts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  .post {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.05);
+  }
+  .post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.7rem;
+  }
+  .post-user {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #e1306c;
+  }
+  .post-time {
+    font-size: 0.85rem;
+    color: #888;
+  }
+  .post-media {
+    margin: 0.8rem 0;
+  }
+  .post-media img,
+  .post-media video {
+    max-width: 100%;
+    border-radius: 10px;
+    box-shadow: 0 0 6px rgb(225, 48, 108, 0.25);
+  }
+  .post-caption {
+    white-space: pre-wrap;
+    font-size: 1rem;
+    color: #333;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    margin: 3rem 0 1rem 0;
+    font-size: 0.85rem;
+    color: #999;
+    user-select: none;
+  }
+
+  /* Responsive tweaks */
+  @media (max-width: 600px) {
+    main {
+      padding: 1rem 1rem 3rem 1rem;
+    }
+  }
+</style>
+</head>
+<body>
+<header role="banner" aria-label="Fuuhh Application Header">
+  <h1>Fuuhh</h1>
+  <p>Your Instagram-like Photo & Video Sharing Platform</p>
+</header>
+<main role="main" aria-live="polite">
+
+<!-- AUTH SECTION -->
+<section id="auth-section" aria-label="Authentication forms">
+  <!-- LOGIN FORM -->
+  <div id="login-form" aria-labelledby="login-title">
+    <h2 id="login-title">Log In</h2>
+    <div id="login-error" class="error" role="alert" aria-live="assertive"></div>
+    <label for="login-email">Email address</label>
+    <input type="email" id="login-email" name="login-email" autocomplete="email" required />
+    <label for="login-password">Password</label>
+    <input type="password" id="login-password" name="login-password" autocomplete="current-password" required />
+    <button id="login-btn" type="button" aria-describedby="login-error">Log In</button>
+    <button class="link-button" id="show-signup-btn" type="button">Don't have an account? Sign up</button>
+  </div>
+
+  <!-- SIGNUP FORM -->
+  <div id="signup-form" aria-labelledby="signup-title" style="display:none;">
+    <h2 id="signup-title">Sign Up</h2>
+    <div id="signup-error" class="error" role="alert" aria-live="assertive"></div>
+    <label for="signup-email">Email address</label>
+    <input type="email" id="signup-email" name="signup-email" autocomplete="email" required />
+    <label for="signup-password">Password (min 6 chars)</label>
+    <input type="password" id="signup-password" name="signup-password" autocomplete="new-password" minlength="6" required />
+    <button id="signup-btn" type="button" aria-describedby="signup-error">Sign Up</button>
+    <button class="link-button" id="show-login-btn" type="button">Already have an account? Log in</button>
+  </div>
+</section>
+
+<!-- PROFILE SECTION -->
+<section id="profile-section" aria-label="User profile details" style="display:none;">
+  <h2>Your Profile</h2>
+  <div class="profile-info" aria-live="polite">
+    <p><strong>Email:</strong> <span id="user-email"></span></p>
+  </div>
+  <button id="logout-btn" class="logout-btn" type="button">Log Out</button>
+</section>
+
+<!-- POST UPLOAD SECTION -->
+<section id="upload-post-section" aria-label="Upload new post" style="display:none;">
+  <h2>Upload New Post</h2>
+  <div id="upload-error" class="error" role="alert" aria-live="assertive"></div>
+  <label for="media-url">Media URL (Image or Video)</label>
+  <input
+    type="url"
+    id="media-url"
+    name="media-url"
+    placeholder="https://example.com/photo.jpg"
+    required
+    aria-describedby="media-help"
+  />
+  <small id="media-help">Must be a direct link to an image or video file</small>
+
+  <label for="caption">Caption (optional)</label>
+  <textarea
+    id="caption"
+    name="caption"
+    rows="3"
+    placeholder="Say something cool..."
+    maxlength="300"
+  ></textarea>
+
+  <button id="upload-btn" type="button" aria-describedby="upload-error">Post</button>
+</section>
+
+<!-- POSTS SECTION -->
+<section id="posts" aria-label="Latest posts from users">
+  <h2>Latest Posts</h2>
+  <div id="posts-container" aria-live="polite" aria-relevant="additions">
+    <p>Loading posts...</p>
+  </div>
+</section>
+</main>
+
+<footer role="contentinfo">&copy; 2025 Fuuhh - All rights reserved.</footer>
+
+<script type="module">
+/* Firebase SDK imports */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/11.8.1/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
+
+/* --- Firebase Config --- */
+/* Replace with your own Firebase project config */
+const firebaseConfig = {
+  apiKey: "AIzaSyCLc1-4omaM4EfL6xCrcPK4O8UfSw1QSoQ",
+  authDomain: "fuuhh-app.firebaseapp.com",
+  projectId: "fuuhh-app",
+  storageBucket: "fuuhh-app.appspot.com",
+  messagingSenderId: "694266475523",
+  appId: "1:694266475523:web:f44f42196285c9e9534a36",
+  measurementId: "G-ML3GMEKSJ3"
+};
+
+/* --- Initialize Firebase --- */
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* --- DOM Elements --- */
+const loginForm = document.getElementById("login-form");
+const signupForm = document.getElementById("signup-form");
+const authSection = document.getElementById("auth-section");
+const profileSection = document.getElementById("profile-section");
+const uploadPostSection = document.getElementById("upload-post-section");
+const postsContainer = document.getElementById("posts-container");
+
+const loginEmailInput = document.getElementById("login-email");
+const loginPasswordInput = document.getElementById("login-password");
+const loginBtn = document.getElementById("login-btn");
+const loginError = document.getElementById("login-error");
+
+const signupEmailInput = document.getElementById("signup-email");
+const signupPasswordInput = document.getElementById("signup-password");
+const signupBtn = document.getElementById("signup-btn");
+const signupError = document.getElementById("signup-error");
+
+const showSignupBtn = document.getElementById("show-signup-btn");
+const showLoginBtn = document.getElementById("show-login-btn");
+
+const userEmailSpan = document.getElementById("user-email");
+const logoutBtn = document.getElementById("logout-btn");
+
+const mediaUrlInput = document.getElementById("media-url");
+const captionInput = document.getElementById("caption");
+const uploadBtn = document.getElementById("upload-btn");
+const uploadError = document.getElementById("upload-error");
+
+/* --- Utility functions --- */
+
+/**
+ * Show or hide
+      
